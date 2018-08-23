@@ -723,7 +723,11 @@ export type JoinType = {
 
   joinEffects(joinCondition: Value, e1: Effects, e2: Effects): Effects,
 
-  joinValuesOfSelectedCompletions(selector: (Completion) => boolean, completion: Completion): Value,
+  joinValuesOfSelectedCompletions(
+    selector: (Completion) => boolean,
+    completion: Completion,
+    keepInfeasiblePaths?: boolean
+  ): Value,
 
   mapAndJoin(
     realm: Realm,

@@ -103,14 +103,50 @@ function simplify(realm, value: Value, isCondition: boolean = false): Value {
         // (x: boolean) || false <=> x
         if (!y.mightNotBeFalse()) return op === "||" ? x : realm.intrinsics.false;
       }
-      if (
-        op === "||" &&
-        y instanceof AbstractValue &&
-        y.kind === "||" &&
-        x.equals(y.args[0]) &&
-        !y.args[1].mightNotBeTrue()
-      )
-        return y;
+      if (op === "||") {
+        if (y instanceof AbstractValue && y.kind === "||") {
+          // x || x || y <=> x || y
+          if (x.equals(y.args[0])) return y;
+          if (x instanceof AbstractValue && x.kind === "!") {
+            // !x0 || y0 || x0 <=> y0
+            if (x.args[0].equals(y.args[1])) return y.args[0];
+          }
+        }
+      }
+      if (op === "&&") {
+        if (x instanceof AbstractValue) {
+          if (x.kind === "&&") {
+            // (x && y) && x <=> x && y
+            // (x && y) && y <=> x && y
+            if (x.args[0].equals(y) || x.args[1].equals(y)) return x;
+          } else if (x.kind === "!") {
+            // !x && x <=> false
+            if (x.args[0].equals(y)) return realm.intrinsics.false;
+          }
+        }
+        if (y instanceof AbstractValue && y.kind === "&&") {
+          // x && (x && y) <=> x && y
+          // y && (x && y) <=> x && y
+          if (x.equals(y.args[0]) || x.equals(y.args[1])) return y;
+        }
+        // x && (x && y || x && z) <=> x && (y || z)
+        if (y instanceof AbstractValue && y.kind === "||") {
+          let [yx, yy] = y.args;
+          let yxs, yys;
+          if (yx instanceof AbstractValue && yx.kind === "&&") {
+            if (x.equals(yx.args[0])) yxs = yx.args[1];
+            else if (x.equals(yx.args[1])) yxs = yx.args[0];
+          }
+          if (yy instanceof AbstractValue && yy.kind === "&&") {
+            if (x.equals(yy.args[0])) yys = yy.args[1];
+            else if (x.equals(yy.args[1])) yys = yy.args[0];
+          }
+          if (yxs !== undefined || yys !== undefined) {
+            let ys = AbstractValue.createFromLogicalOp(realm, "||", yxs || yx, yys || yy, undefined, isCondition);
+            return AbstractValue.createFromLogicalOp(realm, "&&", x, ys, undefined, isCondition);
+          }
+        }
+      }
       if (realm.instantRender.enabled) {
         if (op === "||" && x0 instanceof AbstractValue && y0 instanceof AbstractValue) {
           if (x0.kind === "===" && y0.kind === "===") {

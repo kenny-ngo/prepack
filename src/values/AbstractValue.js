@@ -561,44 +561,47 @@ export default class AbstractValue extends Value {
   static createJoinConditionForSelectedCompletions(
     selector: Completion => boolean,
     completion: JoinedAbruptCompletions | JoinedNormalAndAbruptCompletions
-  ): AbstractValue {
+  ): Value {
+    let jcw;
     let jc = completion.joinCondition;
     let realm = jc.$Realm;
+    let njc = AbstractValue.createFromUnaryOp(realm, "!", jc, true, undefined, true);
+    if (completion instanceof JoinedNormalAndAbruptCompletions && completion.composedWith !== undefined) {
+      jcw = AbstractValue.createJoinConditionForSelectedCompletions(selector, completion.composedWith);
+      jc = AbstractValue.createFromLogicalOp(realm, "&&", jcw, jc, undefined, true);
+      njc = AbstractValue.createFromLogicalOp(realm, "&&", jcw, njc, undefined, true);
+    }
     let c = completion.consequent;
     let a = completion.alternate;
-    let cContains = c.containsSelectedCompletion(selector);
-    let aContains = a.containsSelectedCompletion(selector);
-    invariant(cContains || aContains);
-    if (cContains && !aContains) return jc;
-    if (!cContains && aContains) return negate(jc);
-    invariant(cContains && aContains);
-    let cCond;
-    if (selector(c)) cCond = jc;
-    else {
-      invariant(c instanceof JoinedAbruptCompletions || c instanceof JoinedNormalAndAbruptCompletions);
-      cCond = AbstractValue.createJoinConditionForSelectedCompletions(selector, c);
+    let cContainsSelectedCompletion = c.containsSelectedCompletion(selector);
+    let aContainsSelectedCompletion = a.containsSelectedCompletion(selector);
+    if (!cContainsSelectedCompletion && !aContainsSelectedCompletion) {
+      if (jcw !== undefined) return jcw;
+      return realm.intrinsics.false;
     }
-    let aCond;
-    if (selector(a)) aCond = negate(jc);
-    else {
-      invariant(a instanceof JoinedAbruptCompletions || a instanceof JoinedNormalAndAbruptCompletions);
-      aCond = AbstractValue.createJoinConditionForSelectedCompletions(selector, a);
+    let cCond = jc;
+    if (cContainsSelectedCompletion) {
+      if (c instanceof JoinedAbruptCompletions || c instanceof JoinedNormalAndAbruptCompletions) {
+        let jcc = AbstractValue.createJoinConditionForSelectedCompletions(selector, c);
+        cCond = AbstractValue.createFromLogicalOp(realm, "&&", cCond, jcc, undefined, true);
+      }
+      if (!aContainsSelectedCompletion) return cCond;
     }
-    let or = AbstractValue.createFromLogicalOp(realm, "||", cCond, aCond, undefined, true, true);
-    invariant(or instanceof AbstractValue);
+    let aCond = njc;
+    if (aContainsSelectedCompletion) {
+      if (a instanceof JoinedAbruptCompletions || a instanceof JoinedNormalAndAbruptCompletions) {
+        let jac = AbstractValue.createJoinConditionForSelectedCompletions(selector, a);
+        aCond = AbstractValue.createFromLogicalOp(realm, "&&", aCond, jac, undefined, true);
+      }
+      if (!cContainsSelectedCompletion) return aCond;
+    }
+    let or = AbstractValue.createFromLogicalOp(realm, "||", cCond, aCond, undefined, true);
     if (completion instanceof JoinedNormalAndAbruptCompletions && completion.composedWith !== undefined) {
       let composedCond = AbstractValue.createJoinConditionForSelectedCompletions(selector, completion.composedWith);
-      let and = AbstractValue.createFromLogicalOp(realm, "&&", composedCond, or);
-      invariant(and instanceof AbstractValue);
+      let and = AbstractValue.createFromLogicalOp(realm, "&&", composedCond, or, undefined, true);
       return and;
     }
     return or;
-
-    function negate(v: AbstractValue): AbstractValue {
-      let nv = AbstractValue.createFromUnaryOp(realm, "!", v, true, v.expressionLocation, true, true);
-      invariant(nv instanceof AbstractValue);
-      return nv;
-    }
   }
 
   static createFromBinaryOp(
